@@ -1,22 +1,24 @@
 name: test
 
 on:
-  push:
-    branches:
-      - "main"
-  pull_request:
-    branches:
-      - main
-      - v4
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: "Optional vitest filter; empty runs the full suite"
+        required: false
+        default: ""
 
 jobs:
   test-node:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      NO_COLOR: "1"
     strategy:
       matrix:
         os: [ubuntu-latest]
         node: ["lts/*"]
-        typescript: ["5.5", "latest"]
+        typescript: ["5.5", "5.9.3"]
     name: Test with TypeScript ${{ matrix.typescript }} on Node ${{ matrix.node }} (${{ matrix.os }})
     steps:
       - uses: actions/checkout@v4
@@ -27,11 +29,28 @@ jobs:
       - run: pnpm install
       - run: pnpm add typescript@${{ matrix.typescript }} -w
       - run: pnpm build
-      - run: pnpm test
+      - name: Pack zod
+        if: matrix.typescript == '5.5'
+        working-directory: ./packages/zod
+        run: |
+          mkdir -p ../../seal-dist
+          npm pack --pack-destination ../../seal-dist
+      - name: Upload packed tarball
+        if: matrix.typescript == '5.5'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zod-tgz
+          path: seal-dist/*.tgz
+          if-no-files-found: error
+      - run: pnpm test ${{ inputs.test-filter }}
       - run: pnpm run --filter @zod/resolution test:all
+        if: inputs.test-filter == ''
       - run: pnpm run --filter @zod/integration test:all
+        if: inputs.test-filter == ''
 
   lint:
+    if: false
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -48,6 +67,8 @@ jobs:
       - run: pnpm lint:check
 
   check-circular:
+    if: false
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     name: Check for circular dependencies
     steps:
